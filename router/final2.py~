@@ -1,0 +1,144 @@
+import json
+import socket
+import struct
+import sys
+print "NETWORKING ASSIGNMENT\n\n"
+
+print "enter the number of routers"
+n = int(input())
+
+####extracting IP, ports, and flags####
+fp = open("ipdump.txt", "r")
+fp.seek(24,0)    #if ethernet dump then 52, if ipdump 24
+sip = fp.read(8)
+dip = fp.read(8)
+i = int(sip, 16)
+j = int(dip, 16)
+sip = str(socket.inet_ntoa(struct.pack(">L", i)))
+dip = str(socket.inet_ntoa(struct.pack(">L", j)))
+print "Source IP: %s" %sip
+print "Destination IP: %s" %dip
+
+fp.seek(1,0)    #if ethernet dump then 29, if ipdump 1
+hlen = fp.read(1)
+dhlen = int(hlen, 16)
+dhlen=dhlen*4
+dhlen = dhlen*2
+
+fp.seek(dhlen, 0)    #if ethernet dump then dhlen + 28, if ipdump then dhlen
+sprt=fp.read(4)
+dprt=fp.read(4)
+
+sprt=int(sprt, 16)
+dprt=int(dprt, 16)
+
+print "Source Port: %s" %sprt
+print "Destination Port: %s" %dprt
+
+fp.seek((dhlen + 26),0)    #if ethernet dump then dhlen + 26 + 28, if ipdump then dhlen + 26
+flags = fp.read(2)
+flags = str(bin(int(flags, 16))[2:].zfill(8))
+print "Flags: %s" %flags
+print "\"
+#if(read[6] == '1'):
+#	print "syn"
+
+###finding source router###
+flag = 0
+for x in range(n):
+	exec('with open("router' + str(x) + '.json") as f:' + '\n' + '\t' + 'router' + str(x) + '= json.load(f)')
+	exec('temp = router' + str(x))
+	l = len(temp)
+	for y in temp:
+		if(y == sip):
+			flag = 1
+			break
+if(flag == 0):
+	print "not a valid source address"
+	sys.exit(1)
+
+count = 0
+while(1):
+	if(count > n):
+		print "sorry, destination not in the network"
+		sys.exit(0)
+	####code for syn packet####
+	if(flags[6] == '1'):
+		exec('with open("flow' + str(x) + '.json") as f:' + '\n' + '\t' + 'flow' + str(x) + '= json.load(f)')
+		exec('tempflow = flow' + str(x))
+		for i in xrange(100):
+			i = str(i)
+			if i in tempflow:
+				print
+			else:
+				break
+		##checking destination in local network##
+		exec('with open("router' + str(x) + '.json") as f:' + '\n' + '\t' + 'router' + str(x) + '= json.load(f)')
+		exec('temprout = router' + str(x))
+		for y in temprout:
+			if(y == dip):
+				temp2 = {i: [sip, dip, sprt, dprt, temprout[y][1], temprout[y][2]]}
+				exec('with open("flow' + str(x) + '.json") as f:' + '\n' + '\t' + 'flow' + str(x) + '= json.load(f)')
+				exec('flow' + str(x) + '.update(temp2)')
+				exec('with open("flow' + str(x) + '.json", "w") as f:' + '\n' + '\t' + 'json.dump(flow' + str(x) + ', f)')
+		##checking destination in foreign network##
+			else:
+				for x1 in temprout:
+					mask = temprout[x1][0].split('.')
+					dip1 = dip.split('.')
+					net_id = ""
+					for j in range(4):
+						w = int(mask[j])
+						z = int(dip1[j])
+						net_id += str(w&z)+"."
+					net_id = net_id[0:len(net_id)-1]
+				if(net_id == x1):
+					temp2 = {i: [sip, dip, sprt, dprt, temprout[x1][1], temprout[y][2]]}
+					exec('with open("flow' + str(x) + '.json") as f:' + '\n' + '\t' + 'flow' + str(x) + '= json.load(f)')
+					exec('flow' + str(x) + '.update(temp2)')
+					exec('with open("flow' + str(x) + '.json", "w") as f:' + '\n' + '\t' + 'json.dump(flow' + str(x) + ', f)')
+	####code for fin packet####
+	elif(flags[7] == '1'):
+		#print "hello"
+		exec('with open("flow' + str(x) + '.json") as f:' + '\n' + '\t' + 'flow' + str(x) + '= json.load(f)')
+		exec('tempflow = flow' + str(x))
+		temp2 = [sip, dip, sprt, dprt]
+		for y in tempflow:
+			t2 = []
+			t2 = tempflow[y]
+			t2 = t2[0:4]
+			if(temp2 == t2):
+				x = int(x)
+				print "In router: %d" %x
+				x = str(x)
+				print "going through interface:  " + tempflow[y][4]
+				tempx = tempflow[y][5]
+				del tempflow[y]
+				exec('flow' + str(x) + '.update(tempflow)')
+				exec('with open("flow' + str(x) + '.json", "w") as f:' + '\n' + '\t' + 'json.dump(flow' + str(x) + ', f)')
+				x = int(tempx)
+				break
+		if(x == '-1'):
+			sys.exit(0)
+		else:
+			continue
+	###code for routing###
+	exec('with open("flow' + str(x) + '.json") as f:' + '\n' + '\t' + 'flow' + str(x) + '= json.load(f)')
+	exec('tempflow = flow' + str(x))
+	temp2 = [sip, dip, sprt, dprt]
+	for y in tempflow:
+		t2 = []
+		t2 = tempflow[y]
+		t2 = t2[0:4]
+		if(temp2 == t2):
+			x = int(x)
+			print "In router: %d" %x
+			x = str(x)
+			x = tempflow[y][5]
+			if(x == '-1'):
+				print "reached through interface:  " + tempflow[y][4]
+				sys.exit(0)
+			else:
+				print "going through interface:  " + tempflow[y][4]
+	count = count + 1
+
